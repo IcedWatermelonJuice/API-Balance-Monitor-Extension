@@ -1,0 +1,8 @@
+{
+  "extensionName": {
+    "message": "API Balance Monitor"
+  },
+  "extensionDescription": {
+    "message": "Monitor API balances with fully custom queries and built-in NewAPI-compatible and DeepSeek templates."
+  }
+}

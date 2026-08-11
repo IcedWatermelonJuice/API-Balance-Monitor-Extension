@@ -1,0 +1,8 @@
+{
+  "extensionName": {
+    "message": "API 余额监测"
+  },
+  "extensionDescription": {
+    "message": "通过完全自定义查询及 NewAPI 兼容、DeepSeek 内置模板监控 API 余额。"
+  }
+}
