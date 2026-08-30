@@ -227,16 +227,21 @@ function interpolateValue(value, variables) {
   return value;
 }
 
-async function prepareProviderRequest(provider) {
-  if (provider?.type !== "script") throw new Error("仅支持 script Provider 配置");
-  if (!provider.usageScript?.trim()) throw new Error("用量查询脚本不能为空");
-  const variables = {
+function providerVariables(provider) {
+  return {
     baseUrl: String(provider.baseUrl || "").replace(/\/+$/, ""),
     apiKey: provider.apiKey || "",
     accessToken: provider.accessToken || "",
-    userId: provider.userId || ""
+    userId: provider.userId || "",
+    primaryWindow: ["session", "weekly", "monthly"].includes(provider.primaryWindow) ? provider.primaryWindow : "monthly"
   };
-  const raw = await runUsageScript("prepare", { script: provider.usageScript });
+}
+
+async function prepareProviderRequest(provider) {
+  if (provider?.type !== "script") throw new Error("仅支持 script Provider 配置");
+  if (!provider.usageScript?.trim()) throw new Error("用量查询脚本不能为空");
+  const variables = providerVariables(provider);
+  const raw = await runUsageScript("prepare", { script: provider.usageScript, variables });
   const request = interpolateValue(raw, variables);
   if (!request || typeof request !== "object") throw new Error("脚本未返回 request 配置");
   const url = new URL(String(request.url || ""));
@@ -304,10 +309,32 @@ function normalizeDisplayProgress(progress, extracted) {
   return { enabled: true, totalKey, currentKey, totalValue, currentValue };
 }
 
+function normalizeDisplayProgressList(list, extracted) {
+  if (!Array.isArray(list) || list.length === 0) return null;
+  if (list.length > 4) throw new Error("display.progressList 最多支持 4 条");
+  return list.map((item, index) => {
+    if (!item || typeof item !== "object") throw new Error(`display.progressList[${index}] 必须是对象`);
+    const totalKey = String(item.totalKey || "").trim();
+    const currentKey = String(item.currentKey || "").trim();
+    if (!totalKey || !currentKey) throw new Error(`display.progressList[${index}] 需要 totalKey 和 currentKey`);
+    const total = displayValueByKey(extracted, totalKey);
+    const current = displayValueByKey(extracted, currentKey);
+    if (!total.found) throw new Error(`进度条总长度字段 ${totalKey} 未在 extractor 返回值中找到`);
+    if (!current.found) throw new Error(`进度条当前值字段 ${currentKey} 未在 extractor 返回值中找到`);
+    return {
+      ...displayLabel(item, currentKey),
+      totalKey,
+      currentKey,
+      totalValue: asNumber(total.value, `display.progressList[${index}].${totalKey}`),
+      currentValue: asNumber(current.value, `display.progressList[${index}].${currentKey}`)
+    };
+  });
+}
+
 function normalizeDisplay(display, extracted) {
   if (display == null) throw new Error("脚本缺少 display 配置");
-  if (!display || typeof display !== "object" || !Array.isArray(display.fields) || display.fields.length !== 2) {
-    throw new Error("display.fields 必须包含两个展示字段");
+  if (!display || typeof display !== "object" || !Array.isArray(display.fields) || display.fields.length < 1 || display.fields.length > 3) {
+    throw new Error("display.fields 必须包含 1-3 个展示字段");
   }
   return {
     fields: display.fields.map((field, index) => {
@@ -323,7 +350,10 @@ function normalizeDisplay(display, extracted) {
       }
       return { key, ...displayLabel(field, key), value };
     }),
-    progress: normalizeDisplayProgress(display.progress, extracted)
+    progress: (() => {
+      const items = normalizeDisplayProgressList(display.progressList, extracted);
+      return items ? { enabled: true, multi: true, items } : normalizeDisplayProgress(display.progress, extracted);
+    })()
   };
 }
 
@@ -366,14 +396,20 @@ async function fetchScriptProvider(provider) {
   try { responseValue = text ? JSON.parse(text) : {}; } catch { /* Extractors may intentionally consume plain text. */ }
   const responseHeaders = Object.fromEntries([...response.headers.entries()].map(([name, value]) => [name.toLowerCase(), value]));
   if (!response.ok) {
-    const message = responseValue?.message || responseValue?.error?.message || responseValue?.error || response.statusText;
+    // 火山 OpenAPI 对签名/凭据类错误常返 4xx 并携带 ResponseMetadata.Error 信封，透传便于诊断
+    const envelopeError = responseValue?.ResponseMetadata?.Error;
+    const envelopeMessage = envelopeError?.Code || envelopeError?.Message
+      ? `${envelopeError?.Code || "Error"}：${envelopeError?.Message || ""}`
+      : "";
+    const message = responseValue?.message || responseValue?.error?.message || responseValue?.error || envelopeMessage || response.statusText;
     throw new Error(`HTTP ${response.status}${message ? `：${message}` : ""}`);
   }
 
   const execution = await runUsageScript("extract", {
     script: provider.usageScript,
     response: responseValue,
-    meta: { status: response.status, headers: responseHeaders }
+    meta: { status: response.status, headers: responseHeaders },
+    variables: providerVariables(provider)
   });
   const extracted = execution?.extracted ?? execution;
   if (!extracted || typeof extracted !== "object") throw new Error("extractor 必须返回对象");
@@ -543,6 +579,7 @@ async function updateBadge(enabledProviders, balances, settings) {
     return;
   }
 
+  // 徽标与该站点 Popup 大数字显示同一个值（result.balance）：徽标只采用自己的四舍五入规则
   const value = selectedBalance.balance;
   const text = value >= 1000 ? `${Math.floor(value / 1000)}k` : value >= 100 ? `${Math.floor(value)}` : value >= 10 ? value.toFixed(0) : value.toFixed(1);
   await chrome.action.setBadgeText({ text });

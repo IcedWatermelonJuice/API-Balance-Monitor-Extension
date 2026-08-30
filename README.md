@@ -8,15 +8,17 @@ API Balance Monitor 是一款本地运行的 Chrome Manifest V3 扩展，用于�
 ## 功能亮点
 
 - 支持任意数量的自定义 Provider，不绑定特定平台。
-- 内置 **DeepSeek 官方** 与 **NewAPI 兼容** 两个可编辑模板。
+- 内置 **DeepSeek 官方**、**NewAPI 兼容** 与 **火山方舟 Coding Plan** 三个可编辑模板。
 - 自定义请求 URL、Method、Headers、Body、响应提取逻辑及 Popup 展示字段。
 - 支持余额、总额度、已用额度、Token Plan、Coding Plan 等不同数据形式。
-- 可配置两个明细字段、双语标签、进度条及百分比计算变量。
+- 可配置 1-3 个明细字段、双语标签、单条或多条进度条及百分比计算变量。
+- Popup 中置顶站点的余额数字以高亮色显示。
 - 支持定时刷新、单站点刷新、全部刷新和低余额系统通知。
 - 可指定一个站点作为 Chrome 工具栏 Badge 的余额来源。
 - 支持简体中文、English 及跟随浏览器语言。
 - 支持明亮、深色、跟随系统主题及自定义主题颜色。
 - 支持站点拖拽排序、复制、启用/停用、编辑和二次确认删除。
+- 自定义 Provider 支持自定义图标（data URI、图片链接或本地上传，本地上传会自动缩放为 base64 存储）。
 - 支持使用密码加密导出配置，并在其他设备合并或覆盖导入。
 - 支持自动检查 GitHub Releases 更新。
 
@@ -52,7 +54,7 @@ API Balance Monitor 是一款本地运行的 Chrome Manifest V3 扩展，用于�
 ## 快速开始
 
 1. 打开 Popup，点击设置按钮。
-2. 选择“DeepSeek 模板”“NewAPI兼容 模板”或“自定义 Provider”。
+2. 选择“DeepSeek 模板”“NewAPI兼容 模板”“火山方舟 Coding Plan 模板”或“自定义 Provider”。
 3. 填写站点名称、接口地址和所需凭据。
 4. 根据接口响应调整 `request`、`extractor` 与 `display`。
 5. 点击“测试连接”；成功后点击“确认”。
@@ -85,9 +87,22 @@ X-Api-User: <User ID>
 
 Popup 默认显示“已使用”和“总额度”，并显示剩余额度进度条。不同 NewAPI 部署可能修改接口路径、鉴权 Header 或 JSON 字段；“兼容”表示模板可以编辑，并不保证所有分支都使用完全相同的接口。
 
+### 火山方舟 Coding Plan
+
+查询火山方舟 Coding Plan 订阅的额度用量（5 小时 / 本周 / 本月三个时间窗口），数据与火山方舟控制台“我的套餐”一致。
+
+凭据填写（注意：与推理 API Key 是**两套凭据**，`ark-` 开头的推理 Key 不能用于本模板）：
+
+1. **AccessKey ID（AK）**：填写到 API Key 字段。
+2. **Secret AccessKey（SK）**：填写到 Access Token 字段。
+
+两者在火山引擎控制台的「API 访问密钥」页面获取。首次查询会请求 `open.volcengineapi.com` 的访问权限。
+
+Popup 的余额大数字显示**所选窗口的剩余百分比**（例如 `73.25 %`），三条进度条分别显示 5 小时、本周、本月窗口的剩余比例，三个小字段显示各窗口的重置时间；低余额阈值同样按百分比理解（例如填 `20` 表示所选窗口剩余不足 20% 时提醒）。「余额显示窗口」用于选择大数字采用的窗口（默认月度）；工具栏徽标显示同一数值，仅采用自己的四舍五入规则。仅支持个人版 Coding Plan；Agent Plan 与团队席位暂不支持。
+
 ## 自定义 Provider
 
-Provider 脚本由 `request`、`extractor` 和 `display` 三部分组成：
+Provider 脚本由 `request`（或可选的 `buildRequest`）、`extractor` 和 `display` 组成：
 
 ```js
 ({
@@ -124,6 +139,16 @@ Provider 脚本由 `request`、`extractor` 和 `display` 三部分组成：
 })
 ```
 
+### 自定义图标
+
+自定义 Provider 可以在「自定义图标」中配置站点图标，支持三种来源：
+
+- `data:image/...` Base64 数据 URI；
+- `https://` 或 `http://` 图片链接；
+- 点击「上传图片」选择本地图片，会自动缩放（最长边 96px）并转为 Base64 存储。
+
+图标只保存在 `chrome.storage.local`，随配置加密导出；不建议使用过大的图片链接。
+
 ### Request
 
 - `url`：完整查询地址，仅支持 HTTP/HTTPS。
@@ -138,12 +163,24 @@ Provider 脚本由 `request`、`extractor` 和 `display` 三部分组成：
 - `{{accessToken}}`
 - `{{userId}}`
 
+#### 可选的 buildRequest
+
+需要为每次请求动态计算请求参数（如 API 签名）时，可以在脚本中导出 `async buildRequest(variables)`：它接收与占位符相同的变量对象，返回与 `request` 相同结构的 `{ url, method, headers, body }` 对象；存在时优先于静态 `request`。后台仍会对返回值做协议与方法校验。内置火山方舟模板即通过它计算火山引擎 V4 签名。
+
+脚本内还可以使用内置工具对象 `abm`（沙箱中不可用 Web Crypto，因此由插件注入纯 JS 实现）：
+
+- `abm.sha256Hex(text | bytes)`：SHA-256 摘要（十六进制字符串）
+- `abm.sha256(text | bytes)`：SHA-256 摘要（`Uint8Array`）
+- `abm.hmacHex(key, message)` / `abm.hmac(key, message)`：HMAC-SHA256，key 与 message 支持字符串（按 UTF-8 编码）或 `Uint8Array`
+- `abm.utf8Bytes(text)`、`abm.bytesToHex(bytes)`、`abm.concatBytes(a, b)`
+
 ### Extractor
 
-`extractor(response, meta)` 用于将接口响应转换为 Popup 可使用的数据：
+`extractor(response, meta, vars)` 用于将接口响应转换为 Popup 可使用的数据：
 
 - JSON 响应会自动解析为对象；非 JSON 响应以字符串传入。
 - `meta.status` 是 HTTP 状态码，`meta.headers` 是响应 Header。
+- `vars` 是站点配置变量对象（含 `baseUrl`、`apiKey`、`accessToken`、`userId` 及模板自定义的键）。
 - 必须返回有效的 `remaining`；也可以同时返回 `used` 与 `total`，此时缺少 `remaining` 时会尝试使用 `total - used` 推导。
 - `isValid: false` 可将本次查询标记为无效，`invalidMessage` 用于说明原因。
 - `unit` 支持 `CNY`、`USD` 或任意自定义单位。
@@ -151,11 +188,12 @@ Provider 脚本由 `request`、`extractor` 和 `display` 三部分组成：
 
 ### Display
 
-- `display.fields` 必须正好包含两个字段。
+- `display.fields` 包含 1-3 个展示字段，顺序即 Popup 中从左到右的顺序。
 - 每个 `key` 必须对应 `extractor` 返回值中的变量，顺序决定 Popup 的左右位置。
 - 同时配置 `label` 与 `labelEn` 时分别用于中文和英文；只配置其中一个时，两种语言都会使用该标签。
 - `display.progress.enabled` 控制是否显示进度条。
 - 开启进度条时，`totalKey` 表示总长度，`currentKey` 表示当前剩余量。
+- 可选的 `display.progressList` 用于同时显示多条进度条（例如按时间窗口拆分的套餐用量）。数组每项包含可选的 `label` / `labelEn` 以及 `totalKey`、`currentKey`，最多 4 条；`progressList` 存在且非空时优先于单条 `progress`，两者不要同时启用。
 - Popup 使用 `currentKey / totalKey` 计算“剩余额度”，其余部分显示为“已用”。百分比会限制在 `0%–100%`；例如当前值超过总长度时会显示剩余 `100%`、已用 `0%`。
 
 请只使用自己编写或来自可信来源的 Provider 配置。导入配置中的提取器属于可执行脚本，虽然它在隔离环境中运行，仍不建议导入来源不明的配置文件。
@@ -214,6 +252,7 @@ Provider 脚本由 `request`、`extractor` 和 `display` 三部分组成：
 - GitHub Auth Token 只发送到 `api.github.com`，不会发送到更新检查的代理回退地址。
 - 扩展不加载第三方 JavaScript 库或远程代码。
 - 自定义脚本在独立 sandbox 页面中的可终止 Web Worker 内执行，不能直接调用扩展 API，也不能自行发起网络请求；执行超时会被终止。
+- 火山方舟模板使用的 AccessKey ID / Secret AccessKey 是账户级凭据，权限大于推理 API Key。它们同样只保存在 `chrome.storage.local`，不会写入日志或错误消息；请确保浏览器环境可信，并按需在火山引擎控制台轮换或收窄权限。
 - 本地存储不是系统级密码保险箱。如果电脑或 Chrome Profile 已被攻陷，本地保存的凭据仍可能泄漏。
 
 ## 常见问题
@@ -221,6 +260,14 @@ Provider 脚本由 `request`、`extractor` 和 `display` 三部分组成：
 ### 测试连接失败
 
 检查 Base URL、接口路径、Token/API Key、User ID、请求 Header 及返回字段。还应确认已经授予对应域名的访问权限。
+
+### 火山方舟模板返回签名或授权错误
+
+依次检查：
+
+1. AccessKey ID（AK）与 Secret AccessKey（SK）是否填反；推理 API Key（`ark-` 开头）不能用于本模板。
+2. 本机系统时间是否准确——签名基于本机 UTC 时间，时间偏差过大将被网关拒绝。
+3. 是否已授予 `open.volcengineapi.com` 的访问权限。
 
 ### Popup 显示的字段不正确
 

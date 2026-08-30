@@ -23,6 +23,20 @@ function formatTime(ts) {
 function displayProgress(result) {
   const configured = result.display?.progress;
   if (configured?.enabled !== true) return null;
+  if (configured.multi === true && Array.isArray(configured.items)) {
+    const items = configured.items.map((item) => {
+      const total = Number(item.totalValue);
+      const current = Number(item.currentValue);
+      if (!Number.isFinite(current) || !Number.isFinite(total) || total <= 0) return null;
+      return {
+        label: item.label,
+        labelEn: item.labelEn,
+        remaining: Math.max(0, Math.min(100, current / total * 100)),
+        used: Math.max(0, Math.min(100, (total - current) / total * 100))
+      };
+    }).filter(Boolean);
+    return items.length ? { multi: true, items } : null;
+  }
   const total = Number(configured.totalValue);
   const current = Number(configured.currentValue);
   if (!Number.isFinite(current) || !Number.isFinite(total) || total <= 0) return null;
@@ -46,8 +60,9 @@ function metricValue(field, result) {
 }
 
 function displayFields(result) {
-  return Array.isArray(result.display?.fields) && result.display.fields.length === 2
-    ? result.display.fields
+  const fields = result.display?.fields;
+  return Array.isArray(fields) && fields.length >= 1 && fields.length <= 3
+    ? fields
     : [{ label: "—", labelEn: "—", value: null }, { label: "—", labelEn: "—", value: null }];
 }
 
@@ -55,7 +70,7 @@ function renderCard(provider, result, index) {
   const name = escapeHtml(provider.name || tr("unnamedSite"));
   const providerIcon = providerIconMarkup(provider, "provider-dot-icon");
   const kind = providerKind(provider);
-  const cardClass = kind === "deepseek" ? "deepseek" : kind === "oneapi" ? "newapi" : "custom";
+  const cardClass = (kind === "deepseek" ? "deepseek" : kind === "oneapi" ? "newapi" : "custom") + (index === 0 ? " lead" : "");
   const delay = Math.min(index * 45, 220);
   if (!result) {
     return `<article class="balance-card ${cardClass}" style="animation-delay:${delay}ms"><div class="balance-card-head"><div class="balance-card-name">${providerIcon}${name}</div><span class="card-status good">${tr("normal")}</span></div><div class="error-text">${tr("waitingFirstRefresh")}</div></article>`;
@@ -67,7 +82,11 @@ function renderCard(provider, result, index) {
   const balance = formatResultValue(result.balance, result);
   const fields = displayFields(result);
   const progress = displayProgress(result);
-  const progressHtml = progress ? `<div class="progress-wrap"><div class="progress-track"><div class="progress-fill" style="width:${progress.remaining.toFixed(1)}%"></div></div><div class="progress-meta"><span>${lang === "zh-CN" ? "剩余额度" : "Remaining"} <strong>${progress.remaining.toFixed(1)}%</strong></span><span>${lang === "zh-CN" ? "已用" : "Used"} ${progress.used.toFixed(1)}%</span></div></div>` : "";
+  const progressHtml = progress
+    ? (progress.multi
+      ? `<div class="progress-list">${progress.items.map((item) => `<div class="progress-row"><div class="progress-row-label">${escapeHtml(lang === "zh-CN" ? item.label : (item.labelEn || item.label))}</div><div class="progress-wrap"><div class="progress-track"><div class="progress-fill" style="width:${item.remaining.toFixed(1)}%"></div></div><div class="progress-meta"><span>${lang === "zh-CN" ? "剩余" : "Left"} <strong>${item.remaining.toFixed(1)}%</strong></span><span>${lang === "zh-CN" ? "已用" : "Used"} ${item.used.toFixed(1)}%</span></div></div></div>`).join("")}</div>`
+      : `<div class="progress-wrap"><div class="progress-track"><div class="progress-fill" style="width:${progress.remaining.toFixed(1)}%"></div></div><div class="progress-meta"><span>${lang === "zh-CN" ? "剩余额度" : "Remaining"} <strong>${progress.remaining.toFixed(1)}%</strong></span><span>${lang === "zh-CN" ? "已用" : "Used"} ${progress.used.toFixed(1)}%</span></div></div>`)
+    : "";
   const planName = /^default$/i.test(String(result.planName || "").trim()) ? "" : result.planName;
   const extra = /^Requests:\s*[\d,.]+$/i.test(String(result.extra || "").trim()) ? "" : result.extra;
   const detailHtml = planName || extra

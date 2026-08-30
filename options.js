@@ -5,6 +5,7 @@ import {
   CUSTOM_USAGE_SCRIPT,
   ONEAPI_USAGE_SCRIPT,
   DEEPSEEK_USAGE_SCRIPT,
+  VOLCARK_USAGE_SCRIPT,
   makeId,
   originPattern,
   escapeHtml
@@ -78,18 +79,28 @@ const textAreaField = (id, label, value = "", rows = 13) => `
 function scriptFields(p) {
   const templateLabel = p.templateType === "deepseek"
     ? tr("deepSeekTemplate")
-    : p.templateType === "oneapi" ? tr("oneApiTemplate") : tr("customProvider");
-  const deepSeekUnused = p.templateType === "deepseek"
-    ? `disabled aria-disabled="true" title="${escapeHtml(tr("notUsedByTemplate"))}"`
-    : "";
+    : p.templateType === "oneapi" ? tr("oneApiTemplate")
+    : p.templateType === "volcark" ? tr("volcArkTemplate") : tr("customProvider");
+  const disabledTitle = `disabled aria-disabled="true" title="${escapeHtml(tr("notUsedByTemplate"))}"`;
+  const deepSeekUnused = p.templateType === "deepseek" ? disabledTitle : "";
+  const volcarkUnused = p.templateType === "volcark" ? disabledTitle : "";
+  const apiKeyLabel = p.templateType === "volcark" ? tr("accessKeyId") : tr("apiKey");
+  const accessTokenLabel = p.templateType === "volcark" ? tr("secretAccessKey") : tr("accessToken");
+  const windowFieldMarkup = p.templateType === "volcark" ? `
+    <label class="field-label"><span>${escapeHtml(tr("primaryWindow"))}</span><select id="primaryWindow">${["monthly", "weekly", "session"].map((value) => `<option value="${value}" ${p.primaryWindow === value ? "selected" : ""}>${escapeHtml(tr(`window${value.charAt(0).toUpperCase()}${value.slice(1)}`))}</option>`).join("")}</select></label>` : "";
+  const iconFieldMarkup = p.templateType === "custom" ? `
+    <div class="field-label full-span"><span>${escapeHtml(tr("customIcon"))}</span><span class="icon-input-wrap"><input id="providerIcon" type="text" value="${escapeHtml(p.icon || "")}" placeholder="data:image/png;base64,… 或 https://…" spellcheck="false" /><button type="button" id="iconUploadBtn" class="soft-icon-btn">${escapeHtml(tr("uploadIcon"))}</button><img id="iconPreview" class="icon-preview" alt="" ${p.icon ? `src="${escapeHtml(p.icon)}"` : "hidden"} /></span></div>
+    <input id="iconFile" type="file" accept="image/*" hidden />` : "";
   return `
     <div class="template-note full-span"><strong>${escapeHtml(templateLabel)}</strong><span>${tr("scriptConfigHint")}</span></div>
     ${field("name", tr("name"), p.name)}
     ${field("baseUrl", "Base URL", p.baseUrl, "url", 'placeholder="https://example.com"')}
-    ${secretField("apiKey", tr("apiKey"), p.apiKey, 'autocomplete="off" placeholder="{{apiKey}}"')}
-    ${secretField("accessToken", tr("accessToken"), p.accessToken, `autocomplete="off" placeholder="{{accessToken}}" ${deepSeekUnused}`)}
-    ${secretField("userId", tr("userId"), p.userId, `autocomplete="off" placeholder="{{userId}}" ${deepSeekUnused}`)}
+    ${iconFieldMarkup}
+    ${secretField("apiKey", apiKeyLabel, p.apiKey, 'autocomplete="off" placeholder="{{apiKey}}"')}
+    ${secretField("accessToken", accessTokenLabel, p.accessToken, `autocomplete="off" placeholder="{{accessToken}}" ${deepSeekUnused}`)}
+    ${secretField("userId", tr("userId"), p.userId, `autocomplete="off" placeholder="{{userId}}" ${deepSeekUnused || volcarkUnused}`)}
     ${field("timeoutSeconds", tr("timeoutSeconds"), p.timeoutSeconds, "number", 'min="1" max="120" step="1"')}
+    ${windowFieldMarkup}
     ${textAreaField("usageScript", tr("usageScript"), p.usageScript)}
     <div class="script-help full-span">${tr("scriptPlaceholders")}</div>
     ${field("lowBalance", tr("lowBalance"), p.lowBalance, "number", 'min="0" step="any"')}
@@ -100,19 +111,23 @@ function providerFromTemplate(templateType) {
   const names = {
     custom: lang === "zh-CN" ? "自定义 Provider" : "Custom Provider",
     oneapi: lang === "zh-CN" ? "NewAPI 兼容" : "NewAPI Compatible",
-    deepseek: lang === "zh-CN" ? "DeepSeek 官方" : "DeepSeek Official"
+    deepseek: lang === "zh-CN" ? "DeepSeek 官方" : "DeepSeek Official",
+    volcark: lang === "zh-CN" ? "火山方舟 Coding Plan" : "Volcengine Ark Coding Plan"
   };
   const scripts = {
     custom: CUSTOM_USAGE_SCRIPT,
     oneapi: ONEAPI_USAGE_SCRIPT,
-    deepseek: DEEPSEEK_USAGE_SCRIPT
+    deepseek: DEEPSEEK_USAGE_SCRIPT,
+    volcark: VOLCARK_USAGE_SCRIPT
   };
   return {
     ...DEFAULT_CUSTOM,
     id: makeId(),
     templateType,
     name: names[templateType],
-    baseUrl: templateType === "deepseek" ? "https://api.deepseek.com" : "",
+    baseUrl: templateType === "deepseek" ? "https://api.deepseek.com"
+      : templateType === "volcark" ? "https://open.volcengineapi.com"
+      : "",
     usageScript: scripts[templateType]
   };
 }
@@ -442,6 +457,8 @@ function readProvider() {
     apiKey: document.querySelector("#apiKey").value,
     accessToken: document.querySelector("#accessToken").value,
     userId: document.querySelector("#userId").value,
+    icon: (document.querySelector("#providerIcon")?.value || "").trim(),
+    primaryWindow: document.querySelector("#primaryWindow")?.value || "monthly",
     usageScript: document.querySelector("#usageScript").value.trim(),
     timeoutSeconds: Math.min(120, Math.max(1, Number(document.querySelector("#timeoutSeconds").value) || 10)),
     lowBalance: document.querySelector("#lowBalance").value.trim(),
@@ -449,6 +466,7 @@ function readProvider() {
   };
   if (!provider.name) throw new Error(tr("nameRequired"));
   if (!provider.usageScript) throw new Error(tr("scriptRequired"));
+  if (provider.icon && !/^(data:image\/[a-z0-9+.-]+|https?:\/\/)/i.test(provider.icon)) throw new Error(tr("invalidIcon"));
   if (provider.baseUrl) new URL(provider.baseUrl);
   return provider;
 }
@@ -881,6 +899,59 @@ document.addEventListener("click", (event) => {
 document.querySelector("#addCustom").addEventListener("click", () => openDialog("custom"));
 document.querySelector("#addOneApi").addEventListener("click", () => openDialog("oneapi"));
 document.querySelector("#addDeepSeek").addEventListener("click", () => openDialog("deepseek"));
+document.querySelector("#addVolcArk").addEventListener("click", () => openDialog("volcark"));
+
+// 自定义 Provider 图标：URI 输入 / 本地上传（canvas 缩放后转 data URI 存 storage）
+fields.addEventListener("click", (event) => {
+  if (event.target.closest("#iconUploadBtn")) document.querySelector("#iconFile")?.click();
+});
+fields.addEventListener("change", (event) => {
+  if (event.target?.id === "iconFile") handleIconFileUpload(event.target.files && event.target.files[0]);
+});
+fields.addEventListener("input", (event) => {
+  if (event.target?.id === "providerIcon") updateIconPreview(event.target.value.trim());
+});
+
+function updateIconPreview(value) {
+  const preview = document.querySelector("#iconPreview");
+  if (!preview) return;
+  if (/^(data:image\/[a-z0-9+.-]+|https?:\/\/)/i.test(value)) {
+    preview.src = value;
+    preview.removeAttribute("hidden");
+  } else {
+    preview.removeAttribute("src");
+    preview.setAttribute("hidden", "");
+  }
+}
+
+function handleIconFileUpload(file) {
+  if (!file || !/^image\//i.test(file.type)) return;
+  const reader = new FileReader();
+  reader.onload = () => {
+    const dataUrl = String(reader.result || "");
+    const img = new Image();
+    img.onload = () => {
+      const max = 96;
+      const scale = Math.min(1, max / Math.max(img.width || 1, img.height || 1));
+      const w = Math.max(1, Math.round((img.width || max) * scale));
+      const h = Math.max(1, Math.round((img.height || max) * scale));
+      const canvas = document.createElement("canvas");
+      canvas.width = w;
+      canvas.height = h;
+      const ctx = canvas.getContext("2d");
+      let output = dataUrl;
+      if (ctx) {
+        ctx.drawImage(img, 0, 0, w, h);
+        try { output = canvas.toDataURL("image/png"); } catch { /* 画布异常时退回原始 data URL */ }
+      }
+      const input = document.querySelector("#providerIcon");
+      if (input) input.value = output;
+      updateIconPreview(output);
+    };
+    img.src = dataUrl;
+  };
+  reader.readAsDataURL(file);
+}
 document.querySelector("#saveSettings").addEventListener("click", saveSettings);
 document.querySelector("#globalSection .settings-grid").addEventListener("input", () => markGlobalSettingsDirty());
 document.querySelector("#cancelGlobalChanges").addEventListener("click", async () => {

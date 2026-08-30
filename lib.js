@@ -111,6 +111,152 @@ export const DEEPSEEK_USAGE_SCRIPT = `({
   }
 })`;
 
+export const VOLCARK_USAGE_SCRIPT = `({
+  request: {
+    url: "{{baseUrl}}/?Action=GetCodingPlanUsage&Region=cn-beijing&Version=2024-01-01",
+    method: "POST",
+    headers: { "Content-Type": "application/json; charset=utf-8" }
+  },
+  buildRequest: async function (variables) {
+    var ak = String(variables.apiKey || "").trim();
+    var sk = String(variables.accessToken || "").trim();
+    if (!ak) throw new Error("缺少 AccessKey ID（AK），请在「AccessKey ID」字段填写");
+    if (!sk) throw new Error("缺少 Secret AccessKey（SK），请在「Secret AccessKey」字段填写");
+
+    var host = "open.volcengineapi.com";
+    var region = "cn-beijing";
+    var service = "ark";
+    var contentType = "application/json; charset=utf-8";
+
+    function enc(value) {
+      return String(value).replace(/[^A-Za-z0-9_.~-]/g, function (ch) {
+        return "%" + ch.charCodeAt(0).toString(16).toUpperCase().padStart(2, "0");
+      });
+    }
+    var canonicalQuery = "Action=GetCodingPlanUsage&Region=" + enc(region) + "&Version=2024-01-01";
+
+    var now = new Date();
+    function pad(n) { return n < 10 ? "0" + n : String(n); }
+    var xDate = now.getUTCFullYear() + pad(now.getUTCMonth() + 1) + pad(now.getUTCDate()) +
+      "T" + pad(now.getUTCHours()) + pad(now.getUTCMinutes()) + pad(now.getUTCSeconds()) + "Z";
+    var shortDate = xDate.slice(0, 8);
+
+    var body = "";
+    var xContentSha256 = abm.sha256Hex(body);
+
+    var canonicalHeaders =
+      "host:" + host + "\\n" +
+      "x-date:" + xDate + "\\n" +
+      "x-content-sha256:" + xContentSha256 + "\\n" +
+      "content-type:" + contentType + "\\n";
+    var signedHeaders = "host;x-date;x-content-sha256;content-type";
+    var canonicalRequest = ["POST", "/", canonicalQuery, canonicalHeaders, signedHeaders, xContentSha256].join("\\n");
+
+    var credentialScope = shortDate + "/" + region + "/" + service + "/request";
+    var stringToSign = "HMAC-SHA256\\n" + xDate + "\\n" + credentialScope + "\\n" + abm.sha256Hex(canonicalRequest);
+
+    var kDate = abm.hmac(abm.utf8Bytes(sk), shortDate);
+    var kRegion = abm.hmac(kDate, region);
+    var kService = abm.hmac(kRegion, service);
+    var kSigning = abm.hmac(kService, "request");
+    var signature = abm.hmacHex(kSigning, stringToSign);
+
+    return {
+      url: "https://" + host + "/?" + canonicalQuery,
+      method: "POST",
+      headers: {
+        "X-Date": xDate,
+        "X-Content-Sha256": xContentSha256,
+        "Content-Type": contentType,
+        "Authorization": "HMAC-SHA256 Credential=" + ak + "/" + credentialScope +
+          ", SignedHeaders=" + signedHeaders + ", Signature=" + signature
+      },
+      body: ""
+    };
+  },
+  extractor: function (response, meta, vars) {
+    function pad(n) { return n < 10 ? "0" + n : String(n); }
+    function toNum(v) { var n = Number(v); return isFinite(n) ? n : null; }
+
+    var err = response && response.ResponseMetadata && response.ResponseMetadata.Error;
+    if (err && (err.Code || err.Message)) {
+      return { isValid: false, invalidMessage: "火山方舟 OpenAPI 错误 " + (err.Code || "") + "：" + (err.Message || "") };
+    }
+
+    var result = (response && response.Result) || response || {};
+    var list = Array.isArray(result.QuotaUsage) ? result.QuotaUsage
+      : Array.isArray(result.Usages) ? result.Usages
+      : Array.isArray(result.Details) ? result.Details : [];
+    if (!list.length) {
+      return { isValid: false, invalidMessage: "未检测到 Coding Plan 订阅（QuotaUsage 为空）。Agent Plan 订阅暂不在本模板支持范围。" };
+    }
+
+    var windows = {};
+    for (var i = 0; i < list.length; i++) {
+      var item = list[i] || {};
+      var level = String(item.Level || item.Type || item.Period || item.Label || item.Window || "").toLowerCase();
+      if (level !== "session" && level !== "weekly" && level !== "monthly") continue;
+      var p = toNum(item.Percent != null ? item.Percent
+        : item.UsedPercent != null ? item.UsedPercent
+        : item.UsagePercent);
+      if (p == null) continue;
+      var raw = toNum(item.ResetTime != null ? item.ResetTime : item.ResetTimestamp);
+      var resetDate = raw != null && raw > 0 ? new Date(raw * 1000) : null; // -1/0 = 无活跃窗口
+      windows[level] = {
+        used: p,
+        remaining: Math.max(0, 100 - p),
+        resetText: resetDate ? pad(resetDate.getMonth() + 1) + "-" + pad(resetDate.getDate()) + " " +
+          pad(resetDate.getHours()) + ":" + pad(resetDate.getMinutes()) : null
+      };
+    }
+
+    var pref = String((vars && vars.primaryWindow) || "monthly").toLowerCase();
+    if (pref !== "session" && pref !== "weekly" && pref !== "monthly") pref = "monthly";
+    var primary = windows[pref] || windows.monthly || windows.weekly || windows.session;
+    if (!primary) {
+      return { isValid: false, invalidMessage: "Coding Plan 响应中没有可识别的额度窗口（session/weekly/monthly）。" };
+    }
+
+    function w(name) {
+      var win = windows[name];
+      return {
+        used: win ? win.used : 0,
+        remaining: win ? win.remaining : 100,
+        reset: win ? win.resetText : null
+      };
+    }
+    var s = w("session"), wk = w("weekly"), mo = w("monthly");
+
+    return {
+      isValid: true,
+      invalidMessage: "",
+      remaining: Number(primary.remaining.toFixed(2)),
+      used: Number(primary.used.toFixed(2)),
+      total: 100,
+      unit: "%",
+      precision: 2,
+      planName: "",
+      extra: "",
+      sessionUsed: Number(s.used.toFixed(2)), weeklyUsed: Number(wk.used.toFixed(2)), monthlyUsed: Number(mo.used.toFixed(2)),
+      sessionRemaining: Number(s.remaining.toFixed(2)), weeklyRemaining: Number(wk.remaining.toFixed(2)), monthlyRemaining: Number(mo.remaining.toFixed(2)),
+      sessionReset: s.reset, weeklyReset: wk.reset, monthlyReset: mo.reset
+    };
+  },
+  display: {
+    fields: [
+      { key: "sessionReset", label: "5H重置", labelEn: "5h reset" },
+      { key: "weeklyReset", label: "周重置", labelEn: "Weekly reset" },
+      { key: "monthlyReset", label: "月度重置", labelEn: "Monthly reset" }
+    ],
+    progressList: [
+      { label: "5 小时", labelEn: "5h", totalKey: "total", currentKey: "sessionRemaining" },
+      { label: "本周", labelEn: "Weekly", totalKey: "total", currentKey: "weeklyRemaining" },
+      { label: "本月", labelEn: "Monthly", totalKey: "total", currentKey: "monthlyRemaining" }
+    ],
+    progress: { enabled: false }
+  }
+})`;
+
 export const DEFAULT_CUSTOM = {
   type: "script",
   templateType: "custom",
@@ -119,6 +265,8 @@ export const DEFAULT_CUSTOM = {
   apiKey: "",
   accessToken: "",
   userId: "",
+  icon: "",
+  primaryWindow: "monthly",
   usageScript: CUSTOM_USAGE_SCRIPT,
   timeoutSeconds: 10,
   lowBalance: "",
