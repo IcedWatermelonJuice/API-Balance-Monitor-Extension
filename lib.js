@@ -257,6 +257,74 @@ export const VOLCARK_USAGE_SCRIPT = `({
   }
 })`;
 
+export const OPENCODE_GO_USAGE_SCRIPT = `({
+  request: {
+    url: "{{baseUrl}}/zen/go/v1/usage",
+    method: "GET",
+    headers: {
+      "Accept": "application/json",
+      "Authorization": "Bearer {{apiKey}}"
+    }
+  },
+  extractor: function(response, meta, vars) {
+    var usage = response && response.usage;
+    if (!usage || typeof usage !== "object") {
+      return { isValid: false, invalidMessage: "响应中没有 usage 字段（请确认 API Key 为 Zen 控制台签发的 OpenCode Key）" };
+    }
+    function toNum(v) { var n = Number(v); return isFinite(n) ? n : null; }
+    function pad(n) { return n < 10 ? "0" + n : String(n); }
+    // percent 是「已用」口径；percent=0 时 resetsAt 是占位值，丢弃
+    function win(field) {
+      var entry = usage[field];
+      if (!entry || typeof entry !== "object") return { used: 0, remaining: 100, reset: null };
+      var used = toNum(entry.percent);
+      if (used == null) return { used: 0, remaining: 100, reset: null };
+      used = Math.max(0, Math.min(100, used));
+      var raw = entry.resetsAt, date = null;
+      if (used > 0 && raw) {
+        var text = String(raw);
+        var ms = /^\\d+$/.test(text) ? Number(text) * (Number(text) < 1e12 ? 1000 : 1) : Date.parse(text);
+        if (isFinite(ms) && ms > 0) date = new Date(ms);
+      }
+      return {
+        used: Number(used.toFixed(2)),
+        remaining: Number((100 - used).toFixed(2)),
+        reset: date ? pad(date.getMonth() + 1) + "-" + pad(date.getDate()) + " " +
+          pad(date.getHours()) + ":" + pad(date.getMinutes()) : null
+      };
+    }
+    var s = win("rolling"), wk = win("weekly"), mo = win("monthly");
+    var pref = String((vars && vars.primaryWindow) || "monthly");
+    var primary = pref === "session" ? s : pref === "weekly" ? wk : mo;
+    return {
+      isValid: true,
+      invalidMessage: "",
+      remaining: primary.remaining,
+      used: primary.used,
+      total: 100,
+      unit: "%",
+      precision: 2,
+      planName: "OpenCode Go",
+      extra: "",
+      sessionRemaining: s.remaining, weeklyRemaining: wk.remaining, monthlyRemaining: mo.remaining,
+      sessionReset: s.reset, weeklyReset: wk.reset, monthlyReset: mo.reset
+    };
+  },
+  display: {
+    fields: [
+      { key: "sessionReset", label: "5H重置", labelEn: "5h reset" },
+      { key: "weeklyReset", label: "周重置", labelEn: "Weekly reset" },
+      { key: "monthlyReset", label: "月度重置", labelEn: "Monthly reset" }
+    ],
+    progressList: [
+      { label: "5 小时", labelEn: "5h", totalKey: "total", currentKey: "sessionRemaining" },
+      { label: "本周", labelEn: "Weekly", totalKey: "total", currentKey: "weeklyRemaining" },
+      { label: "本月", labelEn: "Monthly", totalKey: "total", currentKey: "monthlyRemaining" }
+    ],
+    progress: { enabled: false }
+  }
+})`;
+
 export const DEFAULT_CUSTOM = {
   type: "script",
   templateType: "custom",

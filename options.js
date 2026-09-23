@@ -6,6 +6,7 @@ import {
   ONEAPI_USAGE_SCRIPT,
   DEEPSEEK_USAGE_SCRIPT,
   VOLCARK_USAGE_SCRIPT,
+  OPENCODE_GO_USAGE_SCRIPT,
   makeId,
   originPattern,
   escapeHtml
@@ -80,13 +81,15 @@ function scriptFields(p) {
   const templateLabel = p.templateType === "deepseek"
     ? tr("deepSeekTemplate")
     : p.templateType === "oneapi" ? tr("oneApiTemplate")
-    : p.templateType === "volcark" ? tr("volcArkTemplate") : tr("customProvider");
+    : p.templateType === "volcark" ? tr("volcArkTemplate")
+    : p.templateType === "opencodego" ? tr("openCodeGoTemplate") : tr("customProvider");
   const disabledTitle = `disabled aria-disabled="true" title="${escapeHtml(tr("notUsedByTemplate"))}"`;
   const deepSeekUnused = p.templateType === "deepseek" ? disabledTitle : "";
   const volcarkUnused = p.templateType === "volcark" ? disabledTitle : "";
+  const opencodeGoUnused = p.templateType === "opencodego" ? disabledTitle : "";
   const apiKeyLabel = p.templateType === "volcark" ? tr("accessKeyId") : tr("apiKey");
   const accessTokenLabel = p.templateType === "volcark" ? tr("secretAccessKey") : tr("accessToken");
-  const windowFieldMarkup = p.templateType === "volcark" ? `
+  const windowFieldMarkup = (p.templateType === "volcark" || p.templateType === "opencodego") ? `
     <label class="field-label"><span>${escapeHtml(tr("primaryWindow"))}</span><select id="primaryWindow">${["monthly", "weekly", "session"].map((value) => `<option value="${value}" ${p.primaryWindow === value ? "selected" : ""}>${escapeHtml(tr(`window${value.charAt(0).toUpperCase()}${value.slice(1)}`))}</option>`).join("")}</select></label>` : "";
   const iconFieldMarkup = p.templateType === "custom" ? `
     <div class="field-label full-span"><span>${escapeHtml(tr("customIcon"))}</span><span class="icon-input-wrap"><input id="providerIcon" type="text" value="${escapeHtml(p.icon || "")}" placeholder="data:image/png;base64,… 或 https://…" spellcheck="false" /><button type="button" id="iconUploadBtn" class="soft-icon-btn">${escapeHtml(tr("uploadIcon"))}</button><img id="iconPreview" class="icon-preview" alt="" ${p.icon ? `src="${escapeHtml(p.icon)}"` : "hidden"} /></span></div>
@@ -97,8 +100,8 @@ function scriptFields(p) {
     ${field("baseUrl", "Base URL", p.baseUrl, "url", 'placeholder="https://example.com"')}
     ${iconFieldMarkup}
     ${secretField("apiKey", apiKeyLabel, p.apiKey, 'autocomplete="off" placeholder="{{apiKey}}"')}
-    ${secretField("accessToken", accessTokenLabel, p.accessToken, `autocomplete="off" placeholder="{{accessToken}}" ${deepSeekUnused}`)}
-    ${secretField("userId", tr("userId"), p.userId, `autocomplete="off" placeholder="{{userId}}" ${deepSeekUnused || volcarkUnused}`)}
+    ${secretField("accessToken", accessTokenLabel, p.accessToken, `autocomplete="off" placeholder="{{accessToken}}" ${deepSeekUnused || opencodeGoUnused}`)}
+    ${secretField("userId", tr("userId"), p.userId, `autocomplete="off" placeholder="{{userId}}" ${deepSeekUnused || volcarkUnused || opencodeGoUnused}`)}
     ${field("timeoutSeconds", tr("timeoutSeconds"), p.timeoutSeconds, "number", 'min="1" max="120" step="1"')}
     ${windowFieldMarkup}
     ${textAreaField("usageScript", tr("usageScript"), p.usageScript)}
@@ -112,13 +115,15 @@ function providerFromTemplate(templateType) {
     custom: lang === "zh-CN" ? "自定义 Provider" : "Custom Provider",
     oneapi: lang === "zh-CN" ? "NewAPI 兼容" : "NewAPI Compatible",
     deepseek: lang === "zh-CN" ? "DeepSeek 官方" : "DeepSeek Official",
-    volcark: lang === "zh-CN" ? "火山方舟 Coding Plan" : "Volcengine Ark Coding Plan"
+    volcark: lang === "zh-CN" ? "火山方舟 Coding Plan" : "Volcengine Ark Coding Plan",
+    opencodego: lang === "zh-CN" ? "OpenCode Go 订阅" : "OpenCode Go"
   };
   const scripts = {
     custom: CUSTOM_USAGE_SCRIPT,
     oneapi: ONEAPI_USAGE_SCRIPT,
     deepseek: DEEPSEEK_USAGE_SCRIPT,
-    volcark: VOLCARK_USAGE_SCRIPT
+    volcark: VOLCARK_USAGE_SCRIPT,
+    opencodego: OPENCODE_GO_USAGE_SCRIPT
   };
   return {
     ...DEFAULT_CUSTOM,
@@ -127,6 +132,7 @@ function providerFromTemplate(templateType) {
     name: names[templateType],
     baseUrl: templateType === "deepseek" ? "https://api.deepseek.com"
       : templateType === "volcark" ? "https://open.volcengineapi.com"
+      : templateType === "opencodego" ? "https://opencode.ai"
       : "",
     usageScript: scripts[templateType]
   };
@@ -900,6 +906,7 @@ document.querySelector("#addCustom").addEventListener("click", () => openDialog(
 document.querySelector("#addOneApi").addEventListener("click", () => openDialog("oneapi"));
 document.querySelector("#addDeepSeek").addEventListener("click", () => openDialog("deepseek"));
 document.querySelector("#addVolcArk").addEventListener("click", () => openDialog("volcark"));
+document.querySelector("#addOpenCodeGo").addEventListener("click", () => openDialog("opencodego"));
 
 // 自定义 Provider 图标：URI 输入 / 本地上传（canvas 缩放后转 data URI 存 storage）
 fields.addEventListener("click", (event) => {

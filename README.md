@@ -8,7 +8,7 @@ API Balance Monitor 是一款本地运行的 Chrome Manifest V3 扩展，用于�
 ## 功能亮点
 
 - 支持任意数量的自定义 Provider，不绑定特定平台。
-- 内置 **DeepSeek 官方**、**NewAPI 兼容** 与 **火山方舟 Coding Plan** 三个可编辑模板。
+- 内置 **DeepSeek 官方**、**NewAPI 兼容**、**火山方舟 Coding Plan** 与 **OpenCode Go** 四个可编辑模板。
 - 自定义请求 URL、Method、Headers、Body、响应提取逻辑及 Popup 展示字段。
 - 支持余额、总额度、已用额度、Token Plan、Coding Plan 等不同数据形式。
 - 可配置 1-3 个明细字段、双语标签、单条或多条进度条及百分比计算变量。
@@ -54,7 +54,7 @@ API Balance Monitor 是一款本地运行的 Chrome Manifest V3 扩展，用于�
 ## 快速开始
 
 1. 打开 Popup，点击设置按钮。
-2. 选择“DeepSeek 模板”“NewAPI兼容 模板”“火山方舟 Coding Plan 模板”或“自定义 Provider”。
+2. 选择“DeepSeek 模板”“NewAPI兼容 模板”“火山方舟 Coding Plan 模板”“OpenCode Go 订阅”或“自定义 Provider”。
 3. 填写站点名称、接口地址和所需凭据。
 4. 根据接口响应调整 `request`、`extractor` 与 `display`。
 5. 点击“测试连接”；成功后点击“确认”。
@@ -99,6 +99,16 @@ Popup 默认显示“已使用”和“总额度”，并显示剩余额度进�
 两者在火山引擎控制台的「API 访问密钥」页面获取。首次查询会请求 `open.volcengineapi.com` 的访问权限。
 
 Popup 的余额大数字显示**所选窗口的剩余百分比**（例如 `73.25 %`），三条进度条分别显示 5 小时、本周、本月窗口的剩余比例，三个小字段显示各窗口的重置时间；低余额阈值同样按百分比理解（例如填 `20` 表示所选窗口剩余不足 20% 时提醒）。「余额显示窗口」用于选择大数字采用的窗口（默认月度）；工具栏徽标显示同一数值，仅采用自己的四舍五入规则。仅支持个人版 Coding Plan；Agent Plan 与团队席位暂不支持。
+
+### OpenCode Go
+
+查询 [OpenCode Go](https://opencode.ai/docs/go/) 订阅（$10/月）的套餐用量，数据为 5 小时 / 本周 / 本月三个窗口的**已用百分比**。
+
+凭据填写：**API Key** 填 Zen 控制台（[console.opencode.ai](https://console.opencode.ai)）订阅 Go 后复制的 OpenCode API Key。模板不需要 Access Token 与 User ID，这两个字段会被禁用。首次查询会请求 `opencode.ai` 的访问权限。
+
+Popup 的余额大数字显示**所选窗口的剩余百分比**（例如 `87.00 %`），三条进度条分别显示 5 小时、本周、本月窗口的剩余比例，三个小字段显示各窗口的重置时间；低余额阈值按剩余百分比理解（例如填 `20` 表示所选窗口剩余不足 20% 时提醒）。「余额显示窗口」用于选择大数字采用的窗口（默认月度）；工具栏徽标显示同一数值，仅采用自己的四舍五入规则。
+
+注意：该查询接口并非官方公开文档，OpenCode 官方只在控制台内展示用量；接口字段如发生变化，模板可能需要跟随调整（`extractor` 已对缺失字段做了降级处理）。
 
 ## 自定义 Provider
 
